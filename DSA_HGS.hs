@@ -142,30 +142,28 @@ mmain = do
         (r_h, s_h) = l_signature h
         k_h        = l_private h
 
-    forM leaks $ \leak -> do
-        let k_i             = l_private leak
-            (z''_i__z_i, _) = splitAtBit k_i 50
-            (_, z_i)        = splitAtBit z''_i__z_i (70-50)
-        putStrLn $ "secret part is: " ++ show z_i
-
     let leaked  = map leakfun leaks
         (v, w)  = unzip $ allCoefficients leaked
         lmat    = ntlLattice v q
         tvec    = ntlVec w
+
     putStrLn $ lmat ++ tvec
-    putStrLn $ show $ length leaks
-    putStrLn $ show $ length v
-    putStrLn $ "// Ephemeral keys are " ++ (concat $ intersperse " " $ flip map leaks $ \ (Leakage _ _ _ private) -> show private)
-    putStrLn $ "// q is " ++ show q
-    forM leaked $ \l -> putStrLn $ printComputePrivate l
+    putStrLn $ "// private key should be: " ++ show alpha
+    putStrLn $ printComputePrivate $ leaked !! (length leaked - 1)
 
 printComputePrivate :: LeakHGS -> String
-printComputePrivate lhgs = show z' ++ " + (2^" ++ show mu ++ ")*(" ++ show z'' ++ ") + (2^" ++ show lambda ++ ")*"
+printComputePrivate lhgs_h =   "k_h     = " ++ show z' ++ " + (2^" ++ show mu ++ ")*(" ++ show z'' ++ ") + (2^" ++ show lambda ++ ")* z_h\n"
+                            ++ "private = ((" ++ show s_h ++ " * k_h - " ++ show m_h ++ ") * " ++ show invr_h ++ ") `mod` " ++ show q
     where
-    mu     = hgs_mu lhgs
-    lambda = hgs_lambda lhgs
-    z'     = hgs_z' lhgs
-    z''    = hgs_z'' lhgs
+        mu         = hgs_mu lhgs_h
+        lambda     = hgs_lambda lhgs_h
+        h          = hgs_l lhgs_h
+        (r_h, s_h) = l_signature h
+        m_h        = l_message h
+        z'         = hgs_z' lhgs_h
+        z''        = hgs_z'' lhgs_h
+        q          = l_q h
+        invr_h     = fromJust $ inverse r_h q
 
 -- | Prints code to generate the lattice in NTL, given the $s_i$ and p.
 ntlLattice :: [Integer] -> Integer -> String
