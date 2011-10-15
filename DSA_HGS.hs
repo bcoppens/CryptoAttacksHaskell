@@ -57,8 +57,8 @@ leak_hgs :: Integer -> Integer -> Leakage -> LeakHGS
 leak_hgs lambda mu l = LeakHGS l mu lambda z' z''
     where
         k            = l_private  l
-        (z''__z, z') = splitAtBit k          50
-        (z'', _)     = splitAtBit z''__z (20)
+        (z''__z, z') = splitAtBit k      lambda
+        (z'', _)     = splitAtBit z''__z (mu-lambda)
 
 -- | Splits (x_n..x_0) into (x_n..x_s,x_s-1..x_0)
 splitAtBit toSplit at = (toSplit `div` (2^at), toSplit `rem` (2^at))
