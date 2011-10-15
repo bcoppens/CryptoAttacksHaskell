@@ -143,32 +143,10 @@ mmain = do
         k_h        = l_private h
 
     forM leaks $ \leak -> do
-        let invq       = \x -> fromJust $ inverse x q
-            m_i        = l_message leak
-            (r_i, s_i) = l_signature leak
-            k_i        = l_private leak
-
-            cc_i       = cc r_i s_i
-            dd_i       = dd m_i s_i
-
-            cc_h       = cc r_h s_h
-            dd_h       = dd m_h s_h
-
-            cc r s     = - r * (invq s)
-            dd m s     = - m * (invq s)
-
-            aa_i = -cc_i * (invq cc_h)
-            bb_i = -cc_i*dd_h*(invq cc_h) + dd_i
-
+        let k_i             = l_private leak
             (z''_i__z_i, _) = splitAtBit k_i 50
             (_, z_i)        = splitAtBit z''_i__z_i (70-50)
-
-        putStrLn $ show $ (k_i + cc_i * alpha + dd_i) `mod` q
-        putStrLn $ show $ ((-dd_h -k_h) * invq cc_h) `mod` q
-        putStrLn $ show $ alpha
-        putStrLn $ show $ (k_i + aa_i*k_h + bb_i) `mod` q
         putStrLn $ "secret part is: " ++ show z_i
-        putStrLn "---"
 
     let leaked  = map leakfun leaks
         (v, w)  = unzip $ allCoefficients leaked
