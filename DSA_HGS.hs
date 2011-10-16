@@ -3,6 +3,7 @@
 import           Control.Monad
 import qualified Control.Monad.State as MS
 import           Crypto.Random
+import           Data.Array
 import           Data.Bits
 import           Data.ByteString        (ByteString)
 import qualified Data.ByteString     as B
@@ -10,6 +11,7 @@ import qualified Data.Digest.SHA1    as SHA1
 import           Data.List
 import           Data.Maybe
 import           Data.Ratio
+import           Math.Lattices.LLL
 import           OpenSSL.BN          as OpenSSL
 import qualified OpenSSL.DSA         as OpenSSL
 
@@ -127,9 +129,9 @@ allCoefficients list = map go $ take (h-1) list
 
 mmain = do
     let m        = 2^1024
-        nrSigs   = 10
-        minBit   = 50
-        maxBit   = 70
+        nrSigs   = 4
+        minBit   = 0
+        maxBit   = 100
         leakfun  = leak_hgs minBit maxBit
     -- Generate some random parameters
     (p, g, q, alpha) <- parameters m
@@ -147,9 +149,37 @@ mmain = do
         lmat    = ntlLattice v q
         tvec    = ntlVec w
 
-    putStrLn $ lmat ++ tvec
-    putStrLn $ "// private key should be: " ++ show alpha
-    putStrLn $ printComputePrivate $ leaked !! (length leaked - 1)
+        l       = len - 1
+        row0    = (-1) : (take l v)
+        other r = 0:[ el | i <- [0..l-1], let el = if r == i + 1 then q else 0 ]
+        lattice = row0:[ other i | i <- [1..l] ]
+        t       = 0:w
+
+        reduced = lll $ map (map toRational) lattice
+        reduced'= [ reduced ! i | i <- [0..l] ]
+        z       = closeVector reduced' $ map toRational t
+
+        computed= computePrivate (leaked !! (length leaked - 1)) $ numerator $ head z
+
+    putStrLn $ "private key should be: " ++ show alpha
+    putStrLn $ "And we compute it as:  " ++ show computed
+    putStrLn $ "Difference: " ++ show (alpha - computed)
+
+computePrivate :: LeakHGS -> Integer -> Integer
+computePrivate lhgs_h z_h = private
+    where
+        k_h     = z' + (2^mu)*(z'') + (2^lambda)* z_h
+        private = ((s_h * k_h - m_h ) * invr_h) `mod` q
+
+        mu         = hgs_mu lhgs_h
+        lambda     = hgs_lambda lhgs_h
+        h          = hgs_l lhgs_h
+        (r_h, s_h) = l_signature h
+        m_h        = l_message h
+        z'         = hgs_z' lhgs_h
+        z''        = hgs_z'' lhgs_h
+        q          = l_q h
+        invr_h     = fromJust $ inverse r_h q
 
 printComputePrivate :: LeakHGS -> String
 printComputePrivate lhgs_h =   "k_h     = " ++ show z' ++ " + (2^" ++ show mu ++ ")*(" ++ show z'' ++ ") + (2^" ++ show lambda ++ ")* z_h\n"
