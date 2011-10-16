@@ -1,0 +1,4 @@
+This is intended to, eventually, become a kind of place where I can play with different kind of lattice attacks, all in a nice & extensible Haskell framework.
+
+So far my dream. For now, though, it is just a hacked together, slow implementation of (the first part of) 'Lattice Attacks on Digital Signature Schemes' by N.A. Howgrave-Graham and N.P. Smart
+
