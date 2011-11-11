@@ -12,8 +12,9 @@ import           Data.List
 import           Data.Maybe
 import           Data.Helpers
 import           Data.Ratio
-import           LeakingCrypto.DSA        (l_private, l_message, l_signature, l_q)
-import qualified LeakingCrypto.DSA     as DSA
+import           LeakingCrypto.DSA        (l_message, l_signature, l_q)
+import qualified LeakingCrypto.DSA     as DSA hiding (l_private)
+import qualified LeakingCrypto.DSA     as DSAPrivate (l_private)
 import           Math.Lattices.LLL
 import           Math.Modular
 import           OpenSSL.BN          as OpenSSL
@@ -33,7 +34,7 @@ data LeakHGS = LeakHGS {
 leak_hgs :: Integer -> Integer -> DSA.Leakage -> LeakHGS
 leak_hgs lambda mu l = LeakHGS l mu lambda z' z''
     where
-        k            = l_private  l
+        k            = DSAPrivate.l_private  l
         (z''__z, z') = splitAtBit k      lambda
         (z'', _)     = splitAtBit z''__z (mu-lambda)
 
@@ -92,15 +93,14 @@ mmain = do
         maxBit   = 100
         leakfun  = leak_hgs minBit maxBit
     -- Generate some random parameters
-    (p, g, q, alpha) <- DSA.parameters m
-    rnd              <- newGenIO :: IO SystemRandom
-    leaks            <- flip MS.evalStateT rnd $ replicateM nrSigs $ DSA.randomSignature p g q alpha m
+    (p, g, q, alphaPrivate) <- DSA.parameters m
+    rnd                     <- newGenIO :: IO SystemRandom
+    leaks                   <- flip MS.evalStateT rnd $ replicateM nrSigs $ DSA.randomSignature p g q alphaPrivate m
 
     let len = length leaks
         h   = leaks !! (len - 1)
         m_h        = l_message h
         (r_h, s_h) = l_signature h
-        k_h        = l_private h
 
     let leaked  = map leakfun leaks
         (v, w)  = unzip $ allCoefficients leaked
@@ -119,9 +119,9 @@ mmain = do
 
         computed= computePrivate (leaked !! (length leaked - 1)) $ numerator $ head z
 
-    putStrLn $ "private key should be: " ++ show alpha
+    putStrLn $ "private key should be: " ++ show alphaPrivate
     putStrLn $ "And we compute it as:  " ++ show computed
-    putStrLn $ "Difference: " ++ show (alpha - computed)
+    putStrLn $ "Difference: " ++ show (alphaPrivate - computed)
 
 computePrivate :: LeakHGS -> Integer -> Integer
 computePrivate lhgs_h z_h = private
