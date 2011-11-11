@@ -12,6 +12,8 @@ import           Data.List
 import           Data.Maybe
 import           Data.Helpers
 import           Data.Ratio
+import           LeakingCrypto.DSA        (l_private, l_message, l_signature, l_q)
+import qualified LeakingCrypto.DSA     as DSA
 import           Math.Lattices.LLL
 import           Math.Modular
 import           OpenSSL.BN          as OpenSSL
@@ -19,37 +21,8 @@ import qualified OpenSSL.DSA         as OpenSSL
 
 import Debug.Trace
 
-type Signature = (Integer, Integer) -- ^ R, S
-
-data Leakage = Leakage {
-    l_signature :: Signature,
-    l_q         :: Integer, -- TODO, put in Signature
-    l_message   :: Integer,
-    l_private   :: Integer
-} deriving Show
-
-type RState = MS.StateT SystemRandom IO
-
--- | Sign a message with the private key
-sign :: (ByteString -> ByteString) -> Integer -> Integer -> Integer -> Integer -> ByteString -> RState Leakage
-sign hash p g q x m = do
-        rng <- MS.get
-        -- Recalculate the signature in the unlikely case that r = 0 or s = 0
-        case generateMax rng q of
-                Left err         -> error "Oops"
-                Right (k, rng')  -> do
-                        MS.put rng'
-                        let kinv = fromJust $ inverse k q
-                            r    = modexp g k p `mod` q
-                            s    = (kinv * (hm + x * r)) `mod` q
-                        if r == 0 || s == 0
-                            then sign hash p g q x m
-                            else return $ Leakage (r, s) q hm k
-        where
-                hm        = os2ip $ hash m
-
 data LeakHGS = LeakHGS {
-    hgs_l      :: Leakage,
+    hgs_l      :: DSA.Leakage,
     hgs_mu     :: Integer,
     hgs_lambda :: Integer,
     hgs_z'     :: Integer,
@@ -57,7 +30,7 @@ data LeakHGS = LeakHGS {
 }
 
 -- | Leak some bits of private data
-leak_hgs :: Integer -> Integer -> Leakage -> LeakHGS
+leak_hgs :: Integer -> Integer -> DSA.Leakage -> LeakHGS
 leak_hgs lambda mu l = LeakHGS l mu lambda z' z''
     where
         k            = l_private  l
@@ -66,23 +39,6 @@ leak_hgs lambda mu l = LeakHGS l mu lambda z' z''
 
 -- | Splits (x_n..x_0) into (x_n..x_s,x_s-1..x_0)
 splitAtBit toSplit at = (toSplit `div` (2^at), toSplit `rem` (2^at))
-
-parameters max = do
-    keyPair <- OpenSSL.generateDSAParametersAndKey 1024 Nothing -- No optional seed needed here
-    return  (  OpenSSL.dsaP keyPair, OpenSSL.dsaG keyPair, OpenSSL.dsaQ keyPair, OpenSSL.dsaPrivate keyPair )
-
--- | We have to sign all data after digesting it with sha1. SHA1 is required by the DSA standard (FIPS 186-2)
-doDigest :: ByteString -> ByteString
-doDigest toDigest =
-    let digestRaw = SHA1.hash $ B.unpack toDigest :: SHA1.Word160
-        -- The digest is actually a rather useless Word160, convert it back to a more useful (strict) ByteString
-    in  i2osp {- 20 -} $ SHA1.toInteger digestRaw
-
-
-randomSignature p g q x max = do -- :: RState Leakage
-    -- Get a random message
-    msg <- MS.liftIO $ OpenSSL.randIntegerOneToNMinusOne max
-    sign doDigest p g q x $ i2osp msg
 
 -- Given the leakage, and the data for the 'end' values (index 'h'), compute v_i and w_i
 -- Always assume all lambdas and mus are equal among different is
@@ -136,9 +92,9 @@ mmain = do
         maxBit   = 100
         leakfun  = leak_hgs minBit maxBit
     -- Generate some random parameters
-    (p, g, q, alpha) <- parameters m
+    (p, g, q, alpha) <- DSA.parameters m
     rnd              <- newGenIO :: IO SystemRandom
-    leaks            <- flip MS.evalStateT rnd $ replicateM nrSigs $ randomSignature p g q alpha m
+    leaks            <- flip MS.evalStateT rnd $ replicateM nrSigs $ DSA.randomSignature p g q alpha m
 
     let len = length leaks
         h   = leaks !! (len - 1)
