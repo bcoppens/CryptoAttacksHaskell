@@ -46,17 +46,19 @@ splitAtBit toSplit at = (toSplit `div` (2^at), toSplit `rem` (2^at))
 getCoefficients :: LeakHGS -> LeakHGS -> (Integer, Integer)
 getCoefficients lhgs_h lhgs_i = (v_i `mod` q, w_i `mod` q)
     where
-        ll     = hgs_l lhgs_i
-        mu     = hgs_mu lhgs_i
-        lambda = hgs_lambda lhgs_i
-        z'_i   = hgs_z' lhgs_i
-        z''_i  = hgs_z'' lhgs_i
+        ll         = hgs_l lhgs_i
+        mu_i       = hgs_mu lhgs_i
+        lambda_i   = hgs_lambda lhgs_i
+        z'_i       = hgs_z' lhgs_i
+        z''_i      = hgs_z'' lhgs_i
 
-        ll_h   = hgs_l lhgs_h
-        m_h    = l_message ll_h
-        z'_h   = hgs_z' lhgs_h
-        z''_h  = hgs_z'' lhgs_h
+        ll_h       = hgs_l lhgs_h
+        m_h        = l_message ll_h
+        z'_h       = hgs_z' lhgs_h
+        z''_h      = hgs_z'' lhgs_h
         (r_h, s_h) = l_signature ll_h
+        lambda_h   = hgs_lambda lhgs_h
+        mu_h       = hgs_mu lhgs_h
 
         q          = l_q ll
         (r_i, s_i) = l_signature ll
@@ -75,8 +77,8 @@ getCoefficients lhgs_h lhgs_i = (v_i `mod` q, w_i `mod` q)
         aa_i = -cc_i * (invq cc_h)
         bb_i = -cc_i*dd_h*(invq cc_h) + dd_i
 
-        v_i     = aa_i
-        w_i     = (z''_i*2^mu + z'_i+aa_i*z''_h*2^mu+aa_i*z'_h + bb_i) * (invq $ 2^(lambda))
+        v_i     = 2^lambda_h * aa_i * (invq $ 2 ^ lambda_i)
+        w_i     = (z''_i*2^mu_i + z'_i+aa_i*z''_h*2^mu_h+aa_i*z'_h + bb_i) * (invq $ 2^(lambda_i))
 
 
 allCoefficients :: [LeakHGS] -> [(Integer, Integer)]
@@ -86,23 +88,48 @@ allCoefficients list = map go $ take (h-1) list
         leak_h     = list !! (h-1)
         go         = getCoefficients leak_h
 
+-- | Generate a list of random integers between some bounds (lowerBound <= x < upperBound)
+randomList :: CryptoRandomGen g => g -> Integer -> Integer -> Int -> IO [Integer]
+randomList rng lowerBound upperBound count
+    | lowerBound == upperBound = return $ replicate count 0
+    | otherwise                = flip MS.evalStateT rng $ replicateM count $ do
+        let m = upperBound - lowerBound
+        r <- MS.get
+        case generateMax r m of
+                Left err      -> error "Oops"
+                Right (k, r') -> MS.put r' >> (return $ lowerBound + k)
+
+-- | Apply a list of functions to a list of elements (different from <*> in that it doesn't concat like the list monad does!)
+lapp :: [(a->b)] -> [a] -> [b]
+lapp []      _     = []
+lapp _      []     = []
+lapp (f:fs) (a:as) = f a : lapp fs as
+
 mmain = do
     let m        = 2^1024
         nrSigs   = 4
-        minBit   = 0
-        maxBit   = 100
-        leakfun  = leak_hgs minBit maxBit
+        -- The number of bits leaked can differ each measurement
+        minBitLow  = 0
+        minBitHigh = 5
+        maxBitLow  = 100
+        maxBitHigh = 105
+
     -- Generate some random parameters
     (p, g, q, alphaPrivate) <- DSA.parameters m
     rnd                     <- newGenIO :: IO SystemRandom
     leaks                   <- flip MS.evalStateT rnd $ replicateM nrSigs $ DSA.randomSignature p g q alphaPrivate m
 
-    let len = length leaks
-        h   = leaks !! (len - 1)
+    -- TODO, don't reuse rnd!!
+    lowerLeakBits           <- randomList rnd minBitLow minBitHigh nrSigs
+    upperLeakBits           <- randomList rnd maxBitLow maxBitHigh nrSigs
+
+    let len        = length leaks
+        h          = leaks !! (len - 1)
         m_h        = l_message h
         (r_h, s_h) = l_signature h
 
-    let leaked  = map leakfun leaks
+    let leakfns = (replicate nrSigs leak_hgs) `lapp` lowerLeakBits `lapp` upperLeakBits
+        leaked  = leakfns `lapp` leaks
         (v, w)  = unzip $ allCoefficients leaked
         lmat    = ntlLattice v q
         tvec    = ntlVec w
@@ -139,6 +166,12 @@ computePrivate lhgs_h z_h = private
         q          = l_q h
         invr_h     = fromJust $ inverse r_h q
 
+
+
+------
+-- Code to display the computations to find the private key using the (unknown) z_h
+------
+
 printComputePrivate :: LeakHGS -> String
 printComputePrivate lhgs_h =   "k_h     = " ++ show z' ++ " + (2^" ++ show mu ++ ")*(" ++ show z'' ++ ") + (2^" ++ show lambda ++ ")* z_h\n"
                             ++ "private = ((" ++ show s_h ++ " * k_h - " ++ show m_h ++ ") * " ++ show invr_h ++ ") `mod` " ++ show q
@@ -152,6 +185,10 @@ printComputePrivate lhgs_h =   "k_h     = " ++ show z' ++ " + (2^" ++ show mu ++
         z''        = hgs_z'' lhgs_h
         q          = l_q h
         invr_h     = fromJust $ inverse r_h q
+
+------
+-- Code to compute the vectors that can be copy-pasted into C++ NTL code
+------
 
 -- | Prints code to generate the lattice in NTL, given the $s_i$ and p.
 ntlLattice :: [Integer] -> Integer -> String
