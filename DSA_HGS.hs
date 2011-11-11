@@ -12,6 +12,7 @@ import           Data.List
 import           Data.Maybe
 import           Data.Ratio
 import           Math.Lattices.LLL
+import           Math.Modular
 import           OpenSSL.BN          as OpenSSL
 import qualified OpenSSL.DSA         as OpenSSL
 
@@ -230,17 +231,6 @@ lengthBytes :: Integer -> Int
 lengthBytes n
         | n < 256   = 1
         | otherwise = 1 + lengthBytes (n `div` 256)
-
-euclid :: Integral a => a -> a -> a
-euclid x y = f 1 0 x 0 1 y where
-       f a b g u v w | w == 0    = mod a y
-                     | otherwise = f u v w (a-q*u) (b-q*v) (g-q*w)
-                       where q = div g w
-
--- | inverse computes the modular inverse as in g^(-1) mod m
-inverse :: Integral a => a -> a -> Maybe a
-inverse x m | gcd x m == 1 = Just $ euclid x m
-            | otherwise    = Nothing -- "divisor must be coprime to modulus"
 
 data Error =
           InvalidSignature          -- ^ signature is not valid r or s is not between the bound 0..q
