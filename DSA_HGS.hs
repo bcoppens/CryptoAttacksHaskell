@@ -1,5 +1,6 @@
 -- | Implementation of Lattice Attacks on Digital Signature Schemes by N.A. Howgrave-Graham and N.P. Smart
 
+import           Control.Applicative
 import           Control.Monad
 import qualified Control.Monad.State as MS
 import           Crypto.Random
@@ -99,12 +100,6 @@ randomList rng lowerBound upperBound count
                 Left err      -> error "Oops"
                 Right (k, r') -> MS.put r' >> (return $ lowerBound + k)
 
--- | Apply a list of functions to a list of elements (different from <*> in that it doesn't concat like the list monad does!)
-lapp :: [(a->b)] -> [a] -> [b]
-lapp []      _     = []
-lapp _      []     = []
-lapp (f:fs) (a:as) = f a : lapp fs as
-
 mmain = do
     let m        = 2^1024
         nrSigs   = 4
@@ -120,16 +115,15 @@ mmain = do
     leaks                   <- flip MS.evalStateT rnd $ replicateM nrSigs $ DSA.randomSignature p g q alphaPrivate m
 
     -- TODO, don't reuse rnd!!
-    lowerLeakBits           <- randomList rnd minBitLow minBitHigh nrSigs
-    upperLeakBits           <- randomList rnd maxBitLow maxBitHigh nrSigs
+    lowerLeakBits           <- ZipList <$> randomList rnd minBitLow minBitHigh nrSigs
+    upperLeakBits           <- ZipList <$> randomList rnd maxBitLow maxBitHigh nrSigs
 
     let len        = length leaks
         h          = leaks !! (len - 1)
         m_h        = l_message h
         (r_h, s_h) = l_signature h
 
-    let leakfns = (replicate nrSigs leak_hgs) `lapp` lowerLeakBits `lapp` upperLeakBits
-        leaked  = leakfns `lapp` leaks
+    let leaked  = getZipList $ (ZipList $ replicate nrSigs leak_hgs) <*> lowerLeakBits <*> upperLeakBits <*> ZipList leaks
         (v, w)  = unzip $ allCoefficients leaked
         lmat    = ntlLattice v q
         tvec    = ntlVec w
