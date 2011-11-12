@@ -92,7 +92,7 @@ allCoefficients list = map go $ take (h-1) list
 -- | Generate a list of random integers between some bounds (lowerBound <= x < upperBound)
 randomList :: CryptoRandomGen g => g -> Integer -> Integer -> Int -> IO [Integer]
 randomList rng lowerBound upperBound count
-    | lowerBound == upperBound = return $ replicate count 0
+    | lowerBound == upperBound = return $ replicate count lowerBound -- There is no randomness in here...
     | otherwise                = flip MS.evalStateT rng $ replicateM count $ do
         let m = upperBound - lowerBound
         r <- MS.get
