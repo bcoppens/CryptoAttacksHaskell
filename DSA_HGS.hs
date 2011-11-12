@@ -75,8 +75,8 @@ getCoefficients lhgs_h lhgs_i = (v_i `mod` q, w_i `mod` q)
         cc r s     = - r * (invq s)
         dd m s     = - m * (invq s)
 
-        aa_i = -cc_i * (invq cc_h)
-        bb_i = -cc_i*dd_h*(invq cc_h) + dd_i
+        aa_i       = -cc_i * (invq cc_h)
+        bb_i       = -cc_i*dd_h*(invq cc_h) + dd_i
 
         v_i     = 2^lambda_h * aa_i * (invq $ 2 ^ lambda_i)
         w_i     = (z''_i*2^mu_i + z'_i+aa_i*z''_h*2^mu_h+aa_i*z'_h + bb_i) * (invq $ 2^(lambda_i))
@@ -88,6 +88,11 @@ allCoefficients list = map go $ take (h-1) list
         h          = length list
         leak_h     = list !! (h-1)
         go         = getCoefficients leak_h
+
+-- | Verify whether or not a guessed private key corresponds to the real private key. This is done by checking that we indeed solved the discrete logarithm problem,
+--   i.e. whether public key indeed equals g^private
+verifyCorrectPrivateKey :: Integer -> Integer -> Integer -> Integer -> Bool
+verifyCorrectPrivateKey public g p private = public == modexp g private p
 
 -- | Generate a list of random integers between some bounds (lowerBound <= x < upperBound)
 randomList :: CryptoRandomGen g => g -> Integer -> Integer -> Int -> IO [Integer]
@@ -110,13 +115,13 @@ mmain = do
         maxBitHigh = 105
 
     -- Generate some random parameters
-    (p, g, q, alphaPrivate) <- DSA.parameters m
-    rnd                     <- newGenIO :: IO SystemRandom
-    leaks                   <- flip MS.evalStateT rnd $ replicateM nrSigs $ DSA.randomSignature p g q alphaPrivate m
+    (p, g, q, public, alphaPrivate) <- DSA.parameters m
+    rnd                             <- newGenIO :: IO SystemRandom
+    leaks                           <- flip MS.evalStateT rnd $ replicateM nrSigs $ DSA.randomSignature p g q alphaPrivate m
 
     -- TODO, don't reuse rnd!!
-    lowerLeakBits           <- ZipList <$> randomList rnd minBitLow minBitHigh nrSigs
-    upperLeakBits           <- ZipList <$> randomList rnd maxBitLow maxBitHigh nrSigs
+    lowerLeakBits <- ZipList <$> randomList rnd minBitLow minBitHigh nrSigs
+    upperLeakBits <- ZipList <$> randomList rnd maxBitLow maxBitHigh nrSigs
 
     let len        = length leaks
         h          = leaks !! (len - 1)
@@ -142,6 +147,7 @@ mmain = do
 
     putStrLn $ "private key should be: " ++ show alphaPrivate
     putStrLn $ "And we compute it as:  " ++ show computed
+    putStrLn $ "Did we correctly solve the DLP? " ++ (show $ verifyCorrectPrivateKey public g p computed)
     putStrLn $ "Difference: " ++ show (alphaPrivate - computed)
 
 computePrivate :: LeakHGS -> Integer -> Integer

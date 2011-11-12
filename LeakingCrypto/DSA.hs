@@ -56,7 +56,7 @@ sign hash p g q x m = do
 
 parameters max = do
     keyPair <- OpenSSL.generateDSAParametersAndKey 1024 Nothing -- No optional seed needed here
-    return  (  OpenSSL.dsaP keyPair, OpenSSL.dsaG keyPair, OpenSSL.dsaQ keyPair, OpenSSL.dsaPrivate keyPair )
+    return  (  OpenSSL.dsaP keyPair, OpenSSL.dsaG keyPair, OpenSSL.dsaQ keyPair, OpenSSL.dsaPublic keyPair, OpenSSL.dsaPrivate keyPair )
 
 -- | We have to sign all data after digesting it with sha1. SHA1 is required by the DSA standard (FIPS 186-2)
 doDigest :: ByteString -> ByteString
