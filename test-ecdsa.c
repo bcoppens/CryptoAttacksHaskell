@@ -43,7 +43,7 @@ BIGNUM* generated_k;
 int __attribute__ ((noinline)) is_generating_random_k() {
     long* stack;
     __asm__ __volatile__("movq %%rsp, %0" : "=r"(stack));
-    return stack[22] == 0x000000000041525b; // #9 in ecdsa_sign_setup
+    return stack[22] == 0x000000000041528b; // #9 in ecdsa_sign_setup
 }
 
 // More fugly hacky code starting. Sorry...
@@ -107,8 +107,6 @@ void replay_logging_once() {
 // There can be more than 1 r being generated if the algorithm has to be rerun internally.
 int next_fake_random(unsigned char *buf, int bytes) {
     if (is_generating_random_k()) {
-        printf("YES\n");
-        printf("YES\n");
         // This randomness is for k, generate it ourselves and store it!
         start_logging();
         BN_rand_range(generated_k, group_order);
@@ -205,7 +203,8 @@ int main(int argc, char** argv) {
     // Potentially set up a fake random generator
     set_fake_random(eckey, ctx);
 
-    for (i = 0; i < 1; i++) {
+    for (i = 0; i < 100; i++) {
+        char* bn_dec;
         // Compute a ECDSA signature of a SHA-1 hash value using ECDSA_do_sign, time how long it takes
         before = rdtsc();
         sig = ECDSA_do_sign(digest, 20, eckey);
@@ -217,13 +216,23 @@ int main(int argc, char** argv) {
 
         // We could verify the signature if we wanted (result should be _1_ for a correct result)
         // ret = ECDSA_do_verify(digest, 20, sig, eckey);
+        bn_dec = BN_bn2dec(sig->r);
+        fprintf(theoutputfile, "%s,", bn_dec);
+        free(bn_dec);
 
-        fprintf(theoutputfile, "r: ");
-        BN_print_fp(theoutputfile, sig->r);
-        fprintf(theoutputfile, "\ns: ");
-        BN_print_fp(theoutputfile, sig->s);
-        fprintf(theoutputfile, "\n%lld\n", after - before);
-        // EC_KEY_print_fp(theoutputfile, eckey, 0 /*??*/);
+        bn_dec = BN_bn2dec(sig->s);
+        fprintf(theoutputfile, "%s,", bn_dec);
+        free(bn_dec);
+
+        bn_dec = BN_bn2dec(sig->s);
+        fprintf(theoutputfile, "%s,", bn_dec);
+        free(bn_dec);
+
+        bn_dec = BN_bn2dec(generated_k);
+        fprintf(theoutputfile, "%s,", bn_dec);
+        free(bn_dec);
+
+        fprintf(theoutputfile, "%lld\n", after - before);
     }
 
 
